@@ -1,23 +1,16 @@
-
 # elizabeth henaff
 # Feb 2012
 # elizabeth.henaff@cragenomica.es
 
-import pysam
+import datetime
+import os
+import subprocess
+import time as timetime
+
+import psutil
+
 from BamReader import *
 from ClusterList import *
-from AlignedReadPair import *
-import datetime
-import subprocess
-from pysam import csamtools
-import os
-import shlex
-#from memory_profiler import profile
-import gc
-import cPickle as pickle
-import psutil
-import multiprocessing
-import time as timetime
 
 
 def load_pickle(filename):
@@ -29,22 +22,21 @@ def load_pickle(filename):
                 break
 
 
-#@profdile
+# @profdile
 def run_jitterbug_streaming(psorted_bamfile_name, verbose, te_annot, \
-    te_seqs, library_name, num_sdev, output_prefix, TE_name_tag, parallel, num_CPUs, bin_size, min_mapq, generate_test_bam, print_extra_output, conf_lib_stats, mem, min_cluster_size,step1only=False,step2only=False):
-    
+                            te_seqs, library_name, num_sdev, output_prefix, TE_name_tag, parallel, num_CPUs, bin_size,
+                            min_mapq, generate_test_bam, print_extra_output, conf_lib_stats, mem, min_cluster_size,
+                            step1only=False, step2only=False):
     proc = psutil.Process(os.getpid())
 
     print proc.get_memory_info().rss
 
-    #NOTE: comment this later !!!!!!!!!!!!!!!!
-    #sorted_bam_reader = BamReader(output_prefix + ".proper_pair.sorted.bam", output_prefix)
-
+    # NOTE: comment this later !!!!!!!!!!!!!!!!
+    # sorted_bam_reader = BamReader(output_prefix + ".proper_pair.sorted.bam", output_prefix)
 
     print "processing " + psorted_bamfile_name
     if not output_prefix:
         output_prefix = psorted_bamfile_name
-
 
     bamFileName, bamFileExtension = os.path.splitext(psorted_bamfile_name)
     filtered_bam_file_name = output_prefix + ".input_bam.filtered.sam"
@@ -72,35 +64,33 @@ def run_jitterbug_streaming(psorted_bamfile_name, verbose, te_annot, \
     start_time = datetime.datetime.now()
     print "starting at %s" % (str(start_time))
 
+    # construct list of args
 
-    # construct list of args 
-
-
-    if not mem: 
+    if not mem:
         # args = ["samtools", "view", "-h" , "-F", "3854", "-o" , filtered_bam_file_name , psorted_bamfile_name ]
-        args1 = ["samtools", "view", "-h" , "-F", "3854", psorted_bamfile_name]
-        #print args1
+        args1 = ["samtools", "view", "-h", "-F", "3854", psorted_bamfile_name]
+        # print args1
 
-        args2 = ["awk" , r'{ if ($9 <= (-500) || $9>=500 || $9==0 ) { print $0 } }'] 
-        #print args2
+        args2 = ["awk", r'{ if ($9 <= (-500) || $9>=500 || $9==0 ) { print $0 } }']
+        # print args2
 
     else:
-        args1 = ["samtools", "view", "-h" , "-F", "1550", psorted_bamfile_name]
-        #print args1
+        args1 = ["samtools", "view", "-h", "-F", "1550", psorted_bamfile_name]
+        # print args1
 
-        args2 = ["awk" , r'{ if ($9 <= (-1000) || $9>=1000 || $9==0 ) { print $0 } }'] 
-        #print args2
+        args2 = ["awk", r'{ if ($9 <= (-1000) || $9>=1000 || $9==0 ) { print $0 } }']
+        # print args2
 
     # open subprocess 
     try:
-        if not(step2only):
-	    outfile = open(filtered_bam_file_name, "w")
-	    p1 = subprocess.Popen(args1, stdout=subprocess.PIPE)
-	    p2 = subprocess.Popen(args2, stdin=p1.stdout, stdout=outfile)
-	    p1.stdout.close()
-	    output = p2.communicate()[0]
-	else:
-	    print "Skipping step 1 of bam file filtering."
+        if not (step2only):
+            outfile = open(filtered_bam_file_name, "w")
+            p1 = subprocess.Popen(args1, stdout=subprocess.PIPE)
+            p2 = subprocess.Popen(args2, stdin=p1.stdout, stdout=outfile)
+            p1.stdout.close()
+            output = p2.communicate()[0]
+        else:
+            print "Skipping step 1 of bam file filtering."
         # p = subprocess.Popen(args)
         # p.wait()
 
@@ -108,19 +98,15 @@ def run_jitterbug_streaming(psorted_bamfile_name, verbose, te_annot, \
         print "error using --pre_filter: is samtools not installed or in your PATH? do you have the awk utility?"
         print e
         sys.exit(1)
-    
 
     if step1only:
-	print "Step 1 finished. Halting execution"
-	sys.exit(0)
+        print "Step 1 finished. Halting execution"
+        sys.exit(0)
 
-    
     if generate_test_bam:
-            print "generating test bam"
-            psorted_bam_reader.output_one_chr_reads()
-            return None
-
-    
+        print "generating test bam"
+        psorted_bam_reader.output_one_chr_reads()
+        return None
 
     if conf_lib_stats:
         # Get the mean and sdev of insert size from supplied config file
@@ -162,21 +148,17 @@ def run_jitterbug_streaming(psorted_bamfile_name, verbose, te_annot, \
 
         stats_file.close()
 
-        #if fragment sdev is much larger than expected, there might be a problem with the reads of the mapping. Set as default 0.1*fragment length as a reasonable guess. 
+        # if fragment sdev is much larger than expected, there might be a problem with the reads of the mapping. Set as default 0.1*fragment length as a reasonable guess.
         # This is necessary because aberrant values for sdev will mess up the interval overlap calculation and the filtering 
-        if isize_sdev > 0.2*isize_mean:
-            isize_sdev = 0.1*isize_mean
+        if isize_sdev > 0.2 * isize_mean:
+            isize_sdev = 0.1 * isize_mean
             print "WARNING: fragment length standard deviation seems way too large to be realistic.\\n\
             There is maybe something weird with the flags in your bam mapping, or a very large number of large SV \\n\
             that are messing up the count.\\n\
             Setting the stdev to 0.1*fragment_length = %.2f for downstream calculations" % isize_sdev
 
-
-
         time = datetime.datetime.now()
         print "elapsed time: " + str(time - start_time)
-
-
 
     ################# Find valid discordant reads in given sorted bam file ################
     # This will print bam file(s) with the set(s) of valid discordant reads meaning
@@ -193,44 +175,42 @@ def run_jitterbug_streaming(psorted_bamfile_name, verbose, te_annot, \
     # if strict_repetitive is TRUE, will output both sets to a file named
     # <bam_file_name>.valid_discordant_pairs.bam
 
-    #if have already run the prgm and calculated the discordant reads, dont do it again and look for a file called
-    #<bam_file_name>.valid_discordant_pairs or <bam_file_name>.valid_discordant_pairs_strict_rep depending on the value of -s
+    # if have already run the prgm and calculated the discordant reads, dont do it again and look for a file called
+    # <bam_file_name>.valid_discordant_pairs or <bam_file_name>.valid_discordant_pairs_strict_rep depending on the value of -s
 
-    #if not already_calc_discordant_reads:
+    # if not already_calc_discordant_reads:
 
     # Make BamReader object with bam file of FILTERED reads
     psorted_bam_reader = BamReader(filtered_bam_file_name, output_prefix)
 
-        
     valid_discordant_reads_file_name = output_prefix + ".valid_discordant_pairs.bam"
-    database_file=output_prefix+"dbfile.sqlite"
-    
-    
+    database_file = output_prefix + "dbfile.sqlite"
+
     print "selecting discordant reads..."
-    #this writes the bam file of discordant reads to disc to be used later, and return the counts of different types of reads  
-    (bam_stats, ref_lengths, ref_names) = psorted_bam_reader.select_discordant_reads_psorted( verbose, isize_mean, valid_discordant_reads_file_name)
-    
-    #print ref_names, ref_lengths
-    coverage = (bam_stats["total_reads"] * rlen_mean )/ sum(ref_lengths)
-    
+    # this writes the bam file of discordant reads to disc to be used later, and return the counts of different types of reads
+    (bam_stats, ref_lengths, ref_names) = psorted_bam_reader.select_discordant_reads_psorted(verbose, isize_mean,
+                                                                                             valid_discordant_reads_file_name)
+
+    # print ref_names, ref_lengths
+    coverage = (bam_stats["total_reads"] * rlen_mean) / sum(ref_lengths)
+
     filter_conf_file = open(output_prefix + ".filter_config.txt", "w")
-    filter_conf_file.write("cluster_size\t2\t%d\n" % (5*coverage))
+    filter_conf_file.write("cluster_size\t2\t%d\n" % (5 * coverage))
     filter_conf_file.write("span\t2\t%d\n" % isize_mean)
-    filter_conf_file.write("int_size\t%d\t%d\n" % (rlen_mean, 2*(isize_mean + 2*isize_sdev - (rlen_mean - rlen_sdev))) )
-    filter_conf_file.write("softclipped\t2\t%d\n" % (5*coverage))
+    filter_conf_file.write(
+        "int_size\t%d\t%d\n" % (rlen_mean, 2 * (isize_mean + 2 * isize_sdev - (rlen_mean - rlen_sdev))))
+    filter_conf_file.write("softclipped\t2\t%d\n" % (5 * coverage))
     filter_conf_file.write("pick_consistent\t0\t-1")
-    
+
     filter_conf_file.close()
-    
+
     bam_stats_file = open(output_prefix + ".bam_stats.txt", "w")
     for key, value in bam_stats.items():
         bam_stats_file.write("%s\t%d\n" % (key, value))
     bam_stats_file.close()
-    
+
     time = datetime.datetime.now()
     print "elapsed time: " + str(time - start_time)
-
-
 
     ################### Select valid discordant reads that match a TE #####################
     # Of the valid discordant read pairs, select those that have exactly one side that
@@ -240,29 +220,29 @@ def run_jitterbug_streaming(psorted_bamfile_name, verbose, te_annot, \
 
     print "selecting discordant read pairs where exactly one maps to a TE..."
     interval_size = isize_mean + num_sdev * isize_sdev
-    
+
     if te_annot:
         discordant_bam_reader = BamReader(valid_discordant_reads_file_name, output_prefix)
-	### This one has been edited to reduce RAM usage to a fixed cuota and store all results outside in sqlite file
-        read_pair_one_overlap_TE_list = discordant_bam_reader.select_read_pair_one_overlap_TE_annot(te_annot, interval_size, min_mapq,database_file,bin_size)
-	read_pair_one_overlap_TE_list=[1,1]
+        ### This one has been edited to reduce RAM usage to a fixed cuota and store all results outside in sqlite file
+        read_pair_one_overlap_TE_list = discordant_bam_reader.select_read_pair_one_overlap_TE_annot(te_annot,
+                                                                                                    interval_size,
+                                                                                                    min_mapq,
+                                                                                                    database_file,
+                                                                                                    bin_size)
+        read_pair_one_overlap_TE_list = [1, 1]
         if not print_extra_output:
-           pass 
-	   #os.remove(valid_discordant_reads_file_name)
+            pass
+            # os.remove(valid_discordant_reads_file_name)
 
     else:
 
-        #here you would map mate reads to TE sequences and whatnot.
+        # here you would map mate reads to TE sequences and whatnot.
         pass
-
 
     time = datetime.datetime.now()
     print "elapsed time: " + str(time - start_time)
 
     ######################## wait till the proper pair bam file is sorted, and index it ###########################
-
-
-
 
     ##################### Cluster discordant read pairs that match TE #####################
     # Cluster the list of AlignedReadPair objects that have one read overlapping a TE
@@ -279,23 +259,23 @@ def run_jitterbug_streaming(psorted_bamfile_name, verbose, te_annot, \
         print "there might be an error, no discordant reads mapped to a TE location. please check the gff file... are the chromosome names the same as in the reference?"
         sys.exit(2)
     cluster_list = ClusterList(read_pair_one_overlap_TE_list)
-    
-    #if not parallel:
+
+    # if not parallel:
     #    (cluster_pairs, unpaired_fwd_clusters, unpaired_rev_clusters) = cluster_list.generate_clusters(verbose, psorted_bamfile_name, bed_file_handle, True, min_cluster_size)
     #    all_clusters = [(cluster_pairs, unpaired_fwd_clusters, unpaired_rev_clusters)]
     ##parallel version:
-    #else:
+    # else:
     #    # empty string is psorted bed file name, and True is streaming
     #    all_clusters = cluster_list.generate_clusters_parallel(verbose, num_CPUs, bin_size, "", bed_file_handle, True, min_cluster_size,output_prefix)
     #    # bed_file_handle.close()
-    
+
     ##### Alternative with low RAM because it prints out all the results at once and use the database file sqlite from before.
-    all_clusters = cluster_list.generate_clusters_db(database_file,bin_size,output_prefix,"", verbose, bed_file_handle, True, min_cluster_size)
- 
+    all_clusters = cluster_list.generate_clusters_db(database_file, bin_size, output_prefix, "", verbose,
+                                                     bed_file_handle, True, min_cluster_size)
+
     ### retrieve reads in the intervals where insertions were predicted and use them to calculate allelic frequency (zygosity) of the predictions
     ins_regions_bam_name = output_prefix + ".insertion_regions.reads.bam"
-    
-    
+
     #################################
     # ATTEMPT TO REDUCE MEMORY
     #################################
@@ -305,18 +285,17 @@ def run_jitterbug_streaming(psorted_bamfile_name, verbose, te_annot, \
     gc.collect()
     timetime.sleep(30)
     print proc.get_memory_info().rss
-#    with open(output_prefix+'all_clusters.pkl', 'wb') as output:
-#    ### saving the biggest object in a text file to avoid os.fork later
-#	pickle.dump(all_clusters, output, pickle.HIGHEST_PROTOCOL)
-#    #del all_clusters
+    #    with open(output_prefix+'all_clusters.pkl', 'wb') as output:
+    #    ### saving the biggest object in a text file to avoid os.fork later
+    #	pickle.dump(all_clusters, output, pickle.HIGHEST_PROTOCOL)
+    #    #del all_clusters
     gc.collect()
     print proc.get_memory_info().rss
-    
-    
+
     ####print out all the existing variables ###
-    #import pprint
+    # import pprint
     ##pprint.pprint(locals())
-    #with open("locals_out.txt", "w") as fout:
+    # with open("locals_out.txt", "w") as fout:
     #    fout.write(pprint.pformat(locals()))
 
     ###############
@@ -330,11 +309,11 @@ def run_jitterbug_streaming(psorted_bamfile_name, verbose, te_annot, \
     int_bed_reads_select = subprocess.Popen(args)
     # wait till it finishes
     outcode = int_bed_reads_select.wait()
-    
-    #subprocess.call("samtools view -hb -L %s -o %s %s"%(bed_file_name,ins_regions_bam_name,psorted_bamfile_name),shell=True)
+
+    # subprocess.call("samtools view -hb -L %s -o %s %s"%(bed_file_name,ins_regions_bam_name,psorted_bamfile_name),shell=True)
     gc.collect()
 
-    if outcode  == 0:
+    if outcode == 0:
         print "retrieving reads overlapping bed annots successful"
         # construct list of args 
         args = ["samtools", "index", ins_regions_bam_name]
@@ -346,8 +325,8 @@ def run_jitterbug_streaming(psorted_bamfile_name, verbose, te_annot, \
             print "indexing successful"
         else:
             print "indexing failed"
-	    
-	gc.collect()
+
+        gc.collect()
 
     else:
         command = "\t".join(args)
@@ -355,52 +334,47 @@ def run_jitterbug_streaming(psorted_bamfile_name, verbose, te_annot, \
         sys.exit(1)
 
     insertion_regions_reads_bam = pysam.Samfile(ins_regions_bam_name, mode="rb")
-    
-    
+
     ######ATTEMPT TO SAVE MEMORY, reload all_clusters ####
     print proc.get_memory_info().rss
-#    with open(output_prefix+'all_clusters.pkl', 'rb') as infile:
-#	all_clusters = pickle.load(infile)
-    all_clusters=list(load_pickle(output_prefix+'all_clusters.pkl'))
+    #    with open(output_prefix+'all_clusters.pkl', 'rb') as infile:
+    #	all_clusters = pickle.load(infile)
+    all_clusters = list(load_pickle(output_prefix + 'all_clusters.pkl'))
     print proc.get_memory_info().rss
     ########################################################
-	    
+
     for (cluster_pairs, fwd, rev, string) in all_clusters:
-	for cluster_pair in cluster_pairs:
-	    try:
-		reads = insertion_regions_reads_bam.fetch(cluster_pair.get_chr(), cluster_pair.get_insertion_int_start(), cluster_pair.get_insertion_int_end())
-		cluster_pair.calc_zygosity(reads)
-	    except:
-		print "error calculating zygosity of: "
-		print cluster_pair
-		raise
-    print "Done calculating zygosity of each cluster pair"    
-
-
-
+        for cluster_pair in cluster_pairs:
+            try:
+                reads = insertion_regions_reads_bam.fetch(cluster_pair.get_chr(),
+                                                          cluster_pair.get_insertion_int_start(),
+                                                          cluster_pair.get_insertion_int_end())
+                cluster_pair.calc_zygosity(reads)
+            except:
+                print "error calculating zygosity of: "
+                print cluster_pair
+                raise
+    print "Done calculating zygosity of each cluster pair"
 
     time = datetime.datetime.now()
     print "elapsed time: " + str(time - start_time)
 
-
     ###################### print reads that were clustered to bam, output to gff and table ########################################
-
 
     print "writing clustered reads to bam file, writing to gff and tables... "
 
-#    pickle_file = open(output_prefix + ".clusters_pairs.pickle", "w")
-#    pickle.dump(cluster_pairs, pickle_file)
-#    pickle_file.close()
+    #    pickle_file = open(output_prefix + ".clusters_pairs.pickle", "w")
+    #    pickle.dump(cluster_pairs, pickle_file)
+    #    pickle_file.close()
 
-    #output_prefix_clusters = "%s.d%d" % (output_prefix, num_sdev)
+    # output_prefix_clusters = "%s.d%d" % (output_prefix, num_sdev)
 
     ##### this was to wrote final clustered reads to a separate bam file. 
-    #input_bam = pysam.Samfile(psorted_bamfile_name, mode="rb")
-    
+    # input_bam = pysam.Samfile(psorted_bamfile_name, mode="rb")
 
-    #clustered_reads_bam_file = pysam.Samfile(output_prefix + ".final_clustered_reads.bam", mode="wb", referencenames=input_bam.references, referencelengths=input_bam.lengths)
+    # clustered_reads_bam_file = pysam.Samfile(output_prefix + ".final_clustered_reads.bam", mode="wb", referencenames=input_bam.references, referencelengths=input_bam.lengths)
 
-    #input_bam.close()
+    # input_bam.close()
 
     pair_gff_output_file = open(output_prefix + ".TE_insertions_paired_clusters.gff3", "w")
     pair_table_output_file = open(output_prefix + ".TE_insertions_paired_clusters.supporting_clusters.table", "w")
@@ -429,13 +403,13 @@ def run_jitterbug_streaming(psorted_bamfile_name, verbose, te_annot, \
         #         single_table_output_file.write(rev_cluster.to_table(cluster_ID, library_name))
         #         cluster_ID += 1
 
-        #print cluster_ID
+        # print cluster_ID
         for cluster_pair in cluster_pairs:
             pair_gff_output_file.write(cluster_pair.to_gff(cluster_ID, library_name, TE_name_tag) + "\n")
             pair_table_output_file.write(cluster_pair.to_table(cluster_ID, library_name))
             cluster_ID += 1
 
-    #clustered_reads_bam_file.close()
+    # clustered_reads_bam_file.close()
     time = datetime.datetime.now()
     print "elapsed time: " + str(time - start_time)
 
@@ -446,27 +420,23 @@ def run_jitterbug_streaming(psorted_bamfile_name, verbose, te_annot, \
     #     single_gff_output_file.close()
     #     single_table_output_file.close()
 
-    
     end_time = str(datetime.datetime.now())
     print "done! at " + end_time
 
     run_stats = open(output_prefix + ".run_stats.txt", "w")
     run_stats.write("lib\t%s\n" % (library_name))
     run_stats.write("coverage\t%s\n" % (coverage))
-    run_stats.write("runtime\t%s\n" % ( datetime.datetime.now() - start_time))
+    run_stats.write("runtime\t%s\n" % (datetime.datetime.now() - start_time))
     run_stats.write("numCPUs\t%s\n" % (num_CPUs))
     run_stats.close()
     ####### delete pickled file once all it's finished####
     try:
-        os.unlink(output_prefix+'all_clusters.pkl')
+        os.unlink(output_prefix + 'all_clusters.pkl')
     except:
-	pass
-
-
+        pass
 
 
 def write_cluster_pairs_reads_to_bam(bam_file, cluster_pairs):
-
     for cluster_pair in cluster_pairs:
         read_pair_list = cluster_pair.fwd_cluster.readpair_list + cluster_pair.rev_cluster.readpair_list
         print len(read_pair_list)
@@ -478,10 +448,8 @@ def write_cluster_pairs_reads_to_bam(bam_file, cluster_pairs):
             bam_file.write(read_pair.read2)
 
 
-
 def write_single_clusters_to_bam(bam_file, fwd_clusters, rev_clusters):
     for cluster in fwd_clusters + rev_clusters:
         for read_pair in cluster.readpair_list:
             bam_file.write(read_pair.read1)
             bam_file.write(read_pair.read2)
-

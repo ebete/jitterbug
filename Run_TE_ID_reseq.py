@@ -1,25 +1,14 @@
-
 # elizabeth henaff
 # Feb 2012
 # elizabeth.henaff@cragenomica.es
 
-import pysam
+import datetime
+import os
+import resource
+import subprocess
+
 from BamReader import *
 from ClusterList import *
-from AlignedReadPair import *
-import datetime
-import subprocess
-from pysam import csamtools
-import os
-
-import resource
-import gc
-import cPickle as pickle
-import psutil
-import multiprocessing
-import time as timetime
-
-from memory_profiler import profile
 
 
 def load_pickle(filename):
@@ -32,44 +21,39 @@ def load_pickle(filename):
 
 
 def reportResource(point=""):
-    usage=resource.getrusage(resource.RUSAGE_SELF)
+    usage = resource.getrusage(resource.RUSAGE_SELF)
     return '''%s: usertime=%s systime=%s mem=%s mb
-           '''%(point,usage[0],usage[1],
-                (usage[2]*resource.getpagesize())/1000000.0 )
+           ''' % (point, usage[0], usage[1],
+                  (usage[2] * resource.getpagesize()) / 1000000.0)
 
 
 # @profile 
-def run_jitterbug(psorted_bamfile_name, already_calc_discordant_reads, valid_discordant_reads_file_name, verbose, te_annot, \
-    te_seqs, library_name, num_sdev, output_prefix, TE_name_tag, parallel, num_CPUs, bin_size, min_mapq, generate_test_bam, print_extra_output, conf_lib_stats, mem, min_cluster_size):
-
-
+def run_jitterbug(psorted_cramfile_name, already_calc_discordant_reads, valid_discordant_reads_file_name, verbose,
+                  te_annot, \
+                  te_seqs, library_name, num_sdev, output_prefix, TE_name_tag, parallel, num_CPUs, bin_size, min_mapq,
+                  generate_test_bam, print_extra_output, conf_lib_stats, mem, min_cluster_size):
     mem_debug = False
 
     # print te_annot
     # print min_mapq
 
-    
-
-    #NOTE: comment this later !!!!!!!!!!!!!!!!
-    #sorted_bam_reader = BamReader(output_prefix + ".proper_pair.sorted.bam", output_prefix)
+    # NOTE: comment this later !!!!!!!!!!!!!!!!
+    # sorted_bam_reader = BamReader(output_prefix + ".proper_pair.sorted.bam", output_prefix)
 
     if mem_debug:
         reportResource("1")
 
-    print "processing " + psorted_bamfile_name
+    print "processing " + psorted_cramfile_name
     if not output_prefix:
-        output_prefix = psorted_bamfile_name
-
-
+        output_prefix = psorted_cramfile_name
 
     # Make BamReader object with bam file of mapped and sorted reads
-    # NOTE: uncomment this later !!!!!!!!!!!!!
-    psorted_bam_reader = BamReader(psorted_bamfile_name, output_prefix)
+    psorted_bam_reader = BamReader(psorted_cramfile_name, output_prefix)
 
     if generate_test_bam:
-            print "generating test bam"
-            psorted_bam_reader.output_one_chr_reads()
-            return None
+        print "generating test bam"
+        psorted_bam_reader.output_one_chr_reads()
+        return None
 
     start_time = datetime.datetime.now()
     print "starting at %s" % (str(start_time))
@@ -108,16 +92,14 @@ def run_jitterbug(psorted_bamfile_name, already_calc_discordant_reads, valid_dis
 
         stats_file.close()
 
-        #if fragment sdev is much larger than expected, there might be a problem with the reads of the mapping. Set as default 0.1*fragment length as a reasonable guess. 
+        # if fragment sdev is much larger than expected, there might be a problem with the reads of the mapping. Set as default 0.1*fragment length as a reasonable guess.
         # This is necessary because aberrant values for sdev will mess up the interval overlap calculation and the filtering 
-        if isize_sdev > 0.2*isize_mean:
-            isize_sdev = 0.1*isize_mean
+        if isize_sdev > 0.2 * isize_mean:
+            isize_sdev = 0.1 * isize_mean
             print "WARNING: fragment length standard deviation seems way too large to be realistic.\\n\
             There is maybe something weird with the flags in your bam mapping, or a very large number of large SV \\n\
             that are messing up the count.\\n\
             Setting the stdev to 0.1*fragment_length = %.2f for downstream calculations" % isize_sdev
-
-
 
         time = datetime.datetime.now()
         print "elapsed time: " + str(time - start_time)
@@ -137,27 +119,29 @@ def run_jitterbug(psorted_bamfile_name, already_calc_discordant_reads, valid_dis
     # if strict_repetitive is TRUE, will output both sets to a file named
     # <bam_file_name>.valid_discordant_pairs.bam
 
-    #if have already run the prgm and calculated the discordant reads, dont do it again and look for a file called
-    #<bam_file_name>.valid_discordant_pairs or <bam_file_name>.valid_discordant_pairs_strict_rep depending on the value of -s
+    # if have already run the prgm and calculated the discordant reads, dont do it again and look for a file called
+    # <bam_file_name>.valid_discordant_pairs or <bam_file_name>.valid_discordant_pairs_strict_rep depending on the value of -s
     if not already_calc_discordant_reads:
 
         if mem_debug:
             reportResource("2")
-        
+
         valid_discordant_reads_file_name = output_prefix + ".valid_discordant_pairs.bam"
-        database_file=output_prefix+"dbfile.sqlite"  
+        database_file = output_prefix + "dbfile.sqlite"
 
         print "selecting discordant reads..."
-        #this writes the bam file of discordant reads to disc to be used later, and return the counts of different types of reads  
-        (bam_stats, ref_lengths, ref_names) = psorted_bam_reader.select_discordant_reads_psorted( verbose, isize_mean, valid_discordant_reads_file_name)
-        #print ref_names, ref_lengths
-        coverage = (bam_stats["total_reads"] * rlen_mean )/ sum(ref_lengths)
+        # this writes the bam file of discordant reads to disc to be used later, and return the counts of different types of reads
+        (bam_stats, ref_lengths, ref_names) = psorted_bam_reader.select_discordant_reads_psorted(verbose, isize_mean,
+                                                                                                 valid_discordant_reads_file_name)
+        # print ref_names, ref_lengths
+        coverage = (bam_stats["total_reads"] * rlen_mean) / sum(ref_lengths)
 
         filter_conf_file = open(output_prefix + ".filter_config.txt", "w")
-        filter_conf_file.write("cluster_size\t2\t%d\n" % (5*coverage))
+        filter_conf_file.write("cluster_size\t2\t%d\n" % (5 * coverage))
         filter_conf_file.write("span\t2\t%d\n" % isize_mean)
-        filter_conf_file.write("int_size\t%d\t%d\n" % (rlen_mean, 2*(isize_mean + 2*isize_sdev - (rlen_mean - rlen_sdev))) )
-        filter_conf_file.write("softclipped\t2\t%d\n" % (5*coverage))
+        filter_conf_file.write(
+            "int_size\t%d\t%d\n" % (rlen_mean, 2 * (isize_mean + 2 * isize_sdev - (rlen_mean - rlen_sdev))))
+        filter_conf_file.write("softclipped\t2\t%d\n" % (5 * coverage))
         filter_conf_file.write("pick_consistent\t0\t-1")
 
         filter_conf_file.close()
@@ -176,13 +160,11 @@ def run_jitterbug(psorted_bamfile_name, already_calc_discordant_reads, valid_dis
         print "elapsed time: " + str(time - start_time)
 
 
-#        print "sorting proper pair bam file in the background... "
-#        args = ["samtools", "sort", output_prefix + ".proper_pair.bam", output_prefix + ".proper_pair.sorted"]
-#        proper_pair_sort = subprocess.Popen(args)
+    #        print "sorting proper pair bam file in the background... "
+    #        args = ["samtools", "sort", output_prefix + ".proper_pair.bam", output_prefix + ".proper_pair.sorted"]
+    #        proper_pair_sort = subprocess.Popen(args)
     else:
         print "using already selected discordant reads in %s" % (valid_discordant_reads_file_name)
-
-
 
     ################### Select valid discordant reads that match a TE #####################
     # Of the valid discordant read pairs, select those that have exactly one side that
@@ -195,25 +177,26 @@ def run_jitterbug(psorted_bamfile_name, already_calc_discordant_reads, valid_dis
 
     if te_annot:
         discordant_bam_reader = BamReader(valid_discordant_reads_file_name, output_prefix)
-        read_pair_one_overlap_TE_list = discordant_bam_reader.select_read_pair_one_overlap_TE_annot(te_annot, interval_size, min_mapq,database_file,bin_size)
-        read_pair_one_overlap_TE_list=[1,1]
+        read_pair_one_overlap_TE_list = discordant_bam_reader.select_read_pair_one_overlap_TE_annot(te_annot,
+                                                                                                    interval_size,
+                                                                                                    min_mapq,
+                                                                                                    database_file,
+                                                                                                    bin_size)
+        read_pair_one_overlap_TE_list = [1, 1]
         if not (print_extra_output or already_calc_discordant_reads):
             os.remove(valid_discordant_reads_file_name)
 
     else:
 
-        #here you would map mate reads to TE sequences and whatnot.
+        # here you would map mate reads to TE sequences and whatnot.
         pass
 
     if mem_debug:
-            reportResource("5")
+        reportResource("5")
     time = datetime.datetime.now()
     print "elapsed time: " + str(time - start_time)
 
     ######################## wait till the proper pair bam file is sorted, and index it ###########################
-
-
-
 
     ##################### Cluster discordant read pairs that match TE #####################
     # Cluster the list of AlignedReadPair objects that have one read overlapping a TE
@@ -227,28 +210,28 @@ def run_jitterbug(psorted_bamfile_name, already_calc_discordant_reads, valid_dis
         sys.exit(2)
     cluster_list = ClusterList(read_pair_one_overlap_TE_list)
 
-
-####    COMMENTED TO TAKE ADVANTAGE OF THE GENERATED DATABASE FILE###
-    #if not parallel:
+    ####    COMMENTED TO TAKE ADVANTAGE OF THE GENERATED DATABASE FILE###
+    # if not parallel:
     #    (cluster_pairs, unpaired_fwd_clusters, unpaired_rev_clusters, bed_string) = cluster_list.generate_clusters(verbose, psorted_bamfile_name, "", False, min_cluster_size)
     #    all_clusters = [(cluster_pairs, unpaired_fwd_clusters, unpaired_rev_clusters)]
     ##parallel version:
-    #else:
+    # else:
     #    # last tow args are bed file handle and streaming, unnecessary and False, in this version 
     #    all_clusters = cluster_list.generate_clusters_parallel(verbose, num_CPUs, bin_size, psorted_bamfile_name, "", False, min_cluster_size)
 
     bed_file_name = output_prefix + ".insertion_regions.bed"
     bed_file_handle = open(bed_file_name, "w")
-    all_clusters = cluster_list.generate_clusters_db(database_file,bin_size,output_prefix,"", verbose, bed_file_handle, True, min_cluster_size)
-    all_clusters=list(load_pickle(output_prefix+'all_clusters.pkl'))
+    all_clusters = cluster_list.generate_clusters_db(database_file, bin_size, output_prefix, "", verbose,
+                                                     bed_file_handle, True, min_cluster_size)
+    all_clusters = list(load_pickle(output_prefix + 'all_clusters.pkl'))
 
     ins_regions_bam_name = output_prefix + ".insertion_regions.reads.bam"
-    args = ["samtools", "view", "-hb", "-L", bed_file_name, "-o", ins_regions_bam_name, psorted_bamfile_name]
+    args = ["samtools", "view", "-hb", "-L", bed_file_name, "-o", ins_regions_bam_name, psorted_cramfile_name]
     # open subprocess 
     int_bed_reads_select = subprocess.Popen(args)
     # wait till it finishes
     outcode = int_bed_reads_select.wait()
-    if outcode  == 0:
+    if outcode == 0:
         print "retrieving reads overlapping bed annots successful"
         # construct list of args 
         args = ["samtools", "index", ins_regions_bam_name]
@@ -257,9 +240,9 @@ def run_jitterbug(psorted_bamfile_name, already_calc_discordant_reads, valid_dis
         # wait till it finishes
         outcode = int_bed_reads_index.wait()
         if outcode == 0:
-                print "indexing successful"
+            print "indexing successful"
         else:
-                print "indexing failed"
+            print "indexing failed"
     else:
         command = "\t".join(args)
         print "retrieving reads overlapping bed annots failed! command: %s " % (command)
@@ -267,29 +250,27 @@ def run_jitterbug(psorted_bamfile_name, already_calc_discordant_reads, valid_dis
     insertion_regions_reads_bam = pysam.Samfile(ins_regions_bam_name, mode="rb")
     for (cluster_pairs, fwd, rev, string) in all_clusters:
         for cluster_pair in cluster_pairs:
-                try:
-                        reads = insertion_regions_reads_bam.fetch(cluster_pair.get_chr(), cluster_pair.get_insertion_int_start(), cluster_pair.get_insertion_int_end())
-                        cluster_pair.calc_zygosity(reads)
-                except:
-                        print "error calculating zygosity of: "
-                        print cluster_pair
-                        raise
+            try:
+                reads = insertion_regions_reads_bam.fetch(cluster_pair.get_chr(),
+                                                          cluster_pair.get_insertion_int_start(),
+                                                          cluster_pair.get_insertion_int_end())
+                cluster_pair.calc_zygosity(reads)
+            except:
+                print "error calculating zygosity of: "
+                print cluster_pair
+                raise
     print "Done calculating zygosity of each cluster pair"
-
 
     del read_pair_one_overlap_TE_list
     gc.collect()
     if mem_debug:
-            reportResource("5")
+        reportResource("5")
     time = datetime.datetime.now()
     print "elapsed time: " + str(time - start_time)
 
-
     ###################### print reads that were clustered to bam, output to gff and table ########################################
 
-
     print "writing clustered reads to bam file, writing to gff and tables... "
-
 
     pair_gff_output_file = open(output_prefix + ".TE_insertions_paired_clusters.gff3", "w")
     pair_table_output_file = open(output_prefix + ".TE_insertions_paired_clusters.supporting_clusters.table", "w")
@@ -302,8 +283,7 @@ def run_jitterbug(psorted_bamfile_name, already_calc_discordant_reads, valid_dis
 
     print len(all_clusters)
     cluster_ID = 0
-    for (cluster_pairs, unpaired_fwd_clusters, unpaired_rev_clusters,strings) in all_clusters:
-
+    for (cluster_pairs, unpaired_fwd_clusters, unpaired_rev_clusters, strings) in all_clusters:
 
         # unpaired clusters are no longer reported
         # if print_extra_output:
@@ -318,13 +298,13 @@ def run_jitterbug(psorted_bamfile_name, already_calc_discordant_reads, valid_dis
         #         single_table_output_file.write(rev_cluster.to_table(cluster_ID, library_name))
         #         cluster_ID += 1
 
-        #print cluster_ID
+        # print cluster_ID
         for cluster_pair in cluster_pairs:
             pair_gff_output_file.write(cluster_pair.to_gff(cluster_ID, library_name, TE_name_tag) + "\n")
             pair_table_output_file.write(cluster_pair.to_table(cluster_ID, library_name))
             cluster_ID += 1
 
-    #clustered_reads_bam_file.close()
+    # clustered_reads_bam_file.close()
     time = datetime.datetime.now()
     print "elapsed time: " + str(time - start_time)
 
@@ -335,7 +315,6 @@ def run_jitterbug(psorted_bamfile_name, already_calc_discordant_reads, valid_dis
     #     single_gff_output_file.close()
     #     single_table_output_file.close()
 
-    
     end_time = str(datetime.datetime.now())
     print "done! at " + end_time
 
@@ -343,16 +322,12 @@ def run_jitterbug(psorted_bamfile_name, already_calc_discordant_reads, valid_dis
     run_stats.write("lib\t%s\n" % (library_name))
     if not already_calc_discordant_reads:
         run_stats.write("coverage\t%s\n" % (coverage))
-    run_stats.write("runtime\t%s\n" % ( datetime.datetime.now() - start_time))
+    run_stats.write("runtime\t%s\n" % (datetime.datetime.now() - start_time))
     run_stats.write("numCPUs\t%s\n" % (num_CPUs))
     run_stats.close()
 
 
-
-
-
 def write_cluster_pairs_reads_to_bam(bam_file, cluster_pairs):
-
     for cluster_pair in cluster_pairs:
         read_pair_list = cluster_pair.fwd_cluster.readpair_list + cluster_pair.rev_cluster.readpair_list
         print len(read_pair_list)
@@ -364,10 +339,8 @@ def write_cluster_pairs_reads_to_bam(bam_file, cluster_pairs):
             bam_file.write(read_pair.read2)
 
 
-
 def write_single_clusters_to_bam(bam_file, fwd_clusters, rev_clusters):
     for cluster in fwd_clusters + rev_clusters:
         for read_pair in cluster.readpair_list:
             bam_file.write(read_pair.read1)
             bam_file.write(read_pair.read2)
-
