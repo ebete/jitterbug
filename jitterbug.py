@@ -87,8 +87,8 @@ def main(argv):
     if not os.path.exists(args.mapped_reads):
         parser.error("error in required argument mapped_reads: file %s cannot be found. " % (args.mapped_reads))
 
-    if not os.path.exists(args.mapped_reads + ".bai"):
-        parser.error("error in required argument mapped_reads: file %s cannot be found. " % (args.mapped_reads))
+    if not os.path.exists(args.mapped_reads + ".crai"):
+        parser.error("error in required argument mapped_reads: file %s.crai cannot be found. " % (args.mapped_reads))
 
     if not os.path.exists(args.TE_annot):
         parser.error("error in required argument TE_annot: file %s cannot be found. " % (args.TE_annot))
