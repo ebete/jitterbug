@@ -29,9 +29,9 @@ def reportResource(point=""):
 
 # @profile 
 def run_jitterbug(psorted_cramfile_name, already_calc_discordant_reads, valid_discordant_reads_file_name, verbose,
-                  te_annot, \
-                  te_seqs, library_name, num_sdev, output_prefix, TE_name_tag, parallel, num_CPUs, bin_size, min_mapq,
-                  generate_test_bam, print_extra_output, conf_lib_stats, mem, min_cluster_size):
+                  te_annot, te_seqs, library_name, num_sdev, output_prefix, TE_name_tag, parallel, num_CPUs, bin_size,
+                  min_mapq, generate_test_bam, print_extra_output, conf_lib_stats, mem, min_cluster_size,
+                  reference_genome):
     mem_debug = False
 
     # print te_annot
@@ -48,11 +48,11 @@ def run_jitterbug(psorted_cramfile_name, already_calc_discordant_reads, valid_di
         output_prefix = psorted_cramfile_name
 
     # Make BamReader object with bam file of mapped and sorted reads
-    psorted_bam_reader = BamReader(psorted_cramfile_name, output_prefix)
+    psorted_cram_reader = CramReader(psorted_cramfile_name, output_prefix, reference_genome)
 
     if generate_test_bam:
         print "generating test bam"
-        psorted_bam_reader.output_one_chr_reads()
+        psorted_cram_reader.output_one_chr_reads()
         return None
 
     start_time = datetime.datetime.now()
@@ -78,7 +78,7 @@ def run_jitterbug(psorted_cramfile_name, already_calc_discordant_reads, valid_di
         # Get the mean and sdev of insert size from the original bam file
         print "calculating mean insert size..."
         iterations = 1000000
-        (isize_mean, isize_sdev, rlen_mean, rlen_sdev) = psorted_bam_reader.calculate_mean_sdev_isize(iterations)
+        (isize_mean, isize_sdev, rlen_mean, rlen_sdev) = psorted_cram_reader.calculate_mean_sdev_isize(iterations)
         print "mean fragment length over %d reads: %.2f" % (iterations, isize_mean)
         print "standard deviation of fragment_length: %.2f" % (isize_sdev)
         print "mean read length: %.2f" % (rlen_mean)
@@ -131,8 +131,8 @@ def run_jitterbug(psorted_cramfile_name, already_calc_discordant_reads, valid_di
 
         print "selecting discordant reads..."
         # this writes the bam file of discordant reads to disc to be used later, and return the counts of different types of reads
-        (bam_stats, ref_lengths, ref_names) = psorted_bam_reader.select_discordant_reads_psorted(verbose, isize_mean,
-                                                                                                 valid_discordant_reads_file_name)
+        (bam_stats, ref_lengths, ref_names) = psorted_cram_reader.select_discordant_reads_psorted(verbose, isize_mean,
+                                                                                                  valid_discordant_reads_file_name)
         # print ref_names, ref_lengths
         coverage = (bam_stats["total_reads"] * rlen_mean) / sum(ref_lengths)
 
@@ -146,13 +146,13 @@ def run_jitterbug(psorted_cramfile_name, already_calc_discordant_reads, valid_di
 
         filter_conf_file.close()
 
-        bam_stats_file = open(output_prefix + ".bam_stats.txt", "w")
+        cram_stats_file = open(output_prefix + ".cram_stats.txt", "w")
         for key, value in bam_stats.items():
-            bam_stats_file.write("%s\t%d\n" % (key, value))
+            cram_stats_file.write("%s\t%d\n" % (key, value))
 
         if mem_debug:
             reportResource("3")
-        bam_stats_file.close()
+        cram_stats_file.close()
 
         time = datetime.datetime.now()
         if mem_debug:
@@ -176,7 +176,7 @@ def run_jitterbug(psorted_cramfile_name, already_calc_discordant_reads, valid_di
     interval_size = isize_mean + num_sdev * isize_sdev
 
     if te_annot:
-        discordant_bam_reader = BamReader(valid_discordant_reads_file_name, output_prefix)
+        discordant_bam_reader = CramReader(valid_discordant_reads_file_name, output_prefix, reference_genome)
         read_pair_one_overlap_TE_list = discordant_bam_reader.select_read_pair_one_overlap_TE_annot(te_annot,
                                                                                                     interval_size,
                                                                                                     min_mapq,
@@ -225,8 +225,9 @@ def run_jitterbug(psorted_cramfile_name, already_calc_discordant_reads, valid_di
                                                      bed_file_handle, True, min_cluster_size)
     all_clusters = list(load_pickle(output_prefix + 'all_clusters.pkl'))
 
-    ins_regions_bam_name = output_prefix + ".insertion_regions.reads.bam"
-    args = ["samtools", "view", "-hb", "-L", bed_file_name, "-o", ins_regions_bam_name, psorted_cramfile_name]
+    ins_regions_cram_name = output_prefix + ".insertion_regions.reads.cram"
+    args = ["samtools", "view", "-h", "-C", "-T", reference_genome, "-L", bed_file_name, "-o", ins_regions_cram_name,
+            psorted_cramfile_name]
     # open subprocess 
     int_bed_reads_select = subprocess.Popen(args)
     # wait till it finishes
@@ -234,7 +235,7 @@ def run_jitterbug(psorted_cramfile_name, already_calc_discordant_reads, valid_di
     if outcode == 0:
         print "retrieving reads overlapping bed annots successful"
         # construct list of args 
-        args = ["samtools", "index", ins_regions_bam_name]
+        args = ["samtools", "index", ins_regions_cram_name]
         # open subprocess 
         int_bed_reads_index = subprocess.Popen(args)
         # wait till it finishes
@@ -247,13 +248,14 @@ def run_jitterbug(psorted_cramfile_name, already_calc_discordant_reads, valid_di
         command = "\t".join(args)
         print "retrieving reads overlapping bed annots failed! command: %s " % (command)
         sys.exit(1)
-    insertion_regions_reads_bam = pysam.Samfile(ins_regions_bam_name, mode="rb")
+    insertion_regions_reads_cram = pysam.AlignmentFile(ins_regions_cram_name, mode="rc",
+                                                       reference_filename=reference_genome)
     for (cluster_pairs, fwd, rev, string) in all_clusters:
         for cluster_pair in cluster_pairs:
             try:
-                reads = insertion_regions_reads_bam.fetch(cluster_pair.get_chr(),
-                                                          cluster_pair.get_insertion_int_start(),
-                                                          cluster_pair.get_insertion_int_end())
+                reads = insertion_regions_reads_cram.fetch(cluster_pair.get_chr(),
+                                                           cluster_pair.get_insertion_int_start(),
+                                                           cluster_pair.get_insertion_int_end())
                 cluster_pair.calc_zygosity(reads)
             except:
                 print "error calculating zygosity of: "

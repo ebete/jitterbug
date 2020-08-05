@@ -10,10 +10,10 @@ import y_serial_v060 as y_serial
 from AlignedReadPair import *
 
 
-class BamReader:
-
-    def __init__(self, cram_file_name, prefix):
+class CramReader:
+    def __init__(self, cram_file_name, prefix, reference_fasta):
         self.cram_file_name = cram_file_name
+        self.reference_fasta = reference_fasta
         if prefix:
             self.prefix = prefix
         else:
@@ -21,7 +21,7 @@ class BamReader:
 
     def calculate_mean_sdev_isize(self, num_itr):
         """calculate the mean insert size and std dev for num_itr first reads in the bam file"""
-        bam_file = pysam.Samfile(self.cram_file_name, "rc")
+        bam_file = pysam.AlignmentFile(self.cram_file_name, "rc", reference_filename=self.reference_fasta)
         # itr = bam_file.fetch(bam_file.references[0], start=50000)
         print "blah"
         # print itr.tell()
@@ -46,27 +46,29 @@ class BamReader:
         return (mean, sdev, rlen_mean, rlen_sdev)
 
     def output_repetitive_reads(self):
-        bam_file = pysam.Samfile(self.cram_file_name, "rc")
-        output_bam_file = pysam.Samfile(self.prefix + ".repetitive.bam", mode="wb", referencenames=bam_file.references,
-                                        referencelengths=bam_file.lengths)
+        bam_file = pysam.AlignmentFile(self.cram_file_name, "rc", reference_filename=self.reference_fasta)
+        output_cram_file = pysam.AlignmentFile(self.prefix + ".repetitive.cram", mode="wc",
+                                               reference_names=bam_file.references, reference_lengths=bam_file.lengths,
+                                               reference_filename=self.reference_fasta)
 
         read = bam_file.next()
         while 1:
 
             if is_mapped_mult_times(read):
-                output_bam_file.write(read)
+                output_cram_file.write(read)
 
             try:
                 read = bam_file.next()
             except StopIteration:
                 break
         bam_file.close()
-        output_bam_file.close()
+        output_cram_file.close()
 
     def output_one_chr_reads(self):
-        bam_file = pysam.Samfile(self.cram_file_name, "rc")
-        output_bam_file = pysam.Samfile(self.prefix + ".chr1_chr2.bam", mode="wb", referencenames=bam_file.references,
-                                        referencelengths=bam_file.lengths)
+        bam_file = pysam.AlignmentFile(self.cram_file_name, "rc", reference_filename=self.reference_fasta)
+        output_cram_file = pysam.AlignmentFile(self.prefix + ".chr1_chr2.cram", mode="wc",
+                                               reference_names=bam_file.references, reference_lengths=bam_file.lengths,
+                                               reference_filename=self.reference_fasta)
         read1 = bam_file.next()
 
         read_pairs_dict = {}
@@ -286,15 +288,16 @@ class BamReader:
         # print "selecting discordant reads..."
 
         # open file in r (read) c (cram) mode
-        bam_file = pysam.Samfile(self.cram_file_name, "rc")
+        bam_file = pysam.AlignmentFile(self.cram_file_name, "rc", reference_filename=self.reference_fasta)
 
         # file to save the softclipped reads that are NOT multiple maps for both sides
         # soft_clipped_bam_file = pysam.Samfile(self.prefix + ".softclipped.bam", mode="wb", referencenames=bam_file.references, referencelengths=bam_file.lengths)
         # proper_pair_bam_file = pysam.Samfile(self.prefix + ".proper_pair.bam", mode="wb", referencenames=bam_file.references, referencelengths=bam_file.lengths)
 
         # file to save the valid discordant pairs: with at least one uniquely mapping read and all insert sizes are greater than expected.
-        valid_discordant_pairs = pysam.Samfile(outfile_name, mode="wb", referencenames=bam_file.references,
-                                               referencelengths=bam_file.lengths)
+        valid_discordant_pairs = pysam.AlignmentFile(outfile_name, mode="wc", reference_names=bam_file.references,
+                                                     reference_lengths=bam_file.lengths,
+                                                     reference_filename=self.reference_fasta)
 
         # keep track of what kind of reads were found
         single_read_count = 0
@@ -504,15 +507,16 @@ class BamReader:
         # print "selecting discordant reads..."
 
         # open file in r (read) b (bam) mode
-        bam_file = pysam.Samfile(self.cram_file_name, "rc")
+        bam_file = pysam.AlignmentFile(self.cram_file_name, "rc", reference_filename=self.reference_fasta)
 
         # file to save the softclipped reads that are NOT multiple maps for both sides
         # soft_clipped_bam_file = pysam.Samfile(self.prefix + ".softclipped.bam", mode="wb", referencenames=bam_file.references, referencelengths=bam_file.lengths)
         # proper_pair_bam_file = pysam.Samfile(self.prefix + ".proper_pair.bam", mode="wb", referencenames=bam_file.references, referencelengths=bam_file.lengths)
 
         # file to save the valid discordant pairs: with at least one uniquely mapping read and all insert sizes are greater than expected.
-        valid_discordant_pairs = pysam.Samfile(outfile_name, mode="wb", referencenames=bam_file.references,
-                                               referencelengths=bam_file.lengths)
+        valid_discordant_pairs = pysam.AlignmentFile(outfile_name, mode="wc", reference_names=bam_file.references,
+                                                     reference_lengths=bam_file.lengths,
+                                                     reference_filename=self.reference_fasta)
 
         read_names_set = set([])
         read_pairs_dict = {}
@@ -653,15 +657,16 @@ class BamReader:
         # print "selecting discordant reads..."
 
         # open file in r (read) b (bam) mode
-        bam_file = pysam.Samfile(self.cram_file_name, "rc")
+        bam_file = pysam.AlignmentFile(self.cram_file_name, "rc", reference_filename=self.reference_fasta)
 
         # file to save the softclipped reads that are NOT multiple maps for both sides
         # soft_clipped_bam_file = pysam.Samfile(self.prefix + ".softclipped.bam", mode="wb", referencenames=bam_file.references, referencelengths=bam_file.lengths)
         # proper_pair_bam_file = pysam.Samfile(self.prefix + ".proper_pair.bam", mode="wb", referencenames=bam_file.references, referencelengths=bam_file.lengths)
 
         # file to save the valid discordant pairs: with at least one uniquely mapping read and all insert sizes are greater than expected.
-        valid_discordant_pairs = pysam.Samfile(outfile_name, mode="wb", referencenames=bam_file.references,
-                                               referencelengths=bam_file.lengths)
+        valid_discordant_pairs = pysam.AlignmentFile(outfile_name, mode="wc", reference_names=bam_file.references,
+                                                     reference_lengths=bam_file.lengths,
+                                                     reference_filename=self.reference_fasta)
 
         read_names_set = set([])
         read_pairs_dict = dict()
