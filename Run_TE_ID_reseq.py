@@ -126,7 +126,7 @@ def run_jitterbug(psorted_cramfile_name, already_calc_discordant_reads, valid_di
         if mem_debug:
             reportResource("2")
 
-        valid_discordant_reads_file_name = output_prefix + ".valid_discordant_pairs.bam"
+        valid_discordant_reads_file_name = output_prefix + ".valid_discordant_pairs.cram"
         database_file = output_prefix + "dbfile.sqlite"
 
         print "selecting discordant reads..."
